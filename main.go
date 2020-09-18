@@ -1,41 +1,43 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
+	"log"
 	"os"
 
-	"github.com/Satish-Masa/fitnes-youtube/domain/search"
+	"github.com/Satish-Masa/fitnes-youtube/infrastructure"
+	"github.com/Satish-Masa/fitnes-youtube/interfaces"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"github.com/joho/godotenv"
+	migrate "github.com/rubenv/sql-migrate"
 )
 
 func main() {
+	tmp := "%s:%s@/%s?charset=utf8&parseTime=True&loc=Local"
 	err := godotenv.Load("secret.env")
 	if err != nil {
-		fmt.Println("Not Load Env File")
+		log.Fatalln(err)
 	}
-	apikey := os.Getenv("Youtube_API")
-	youtube_api := "https://www.googleapis.com/youtube/v3/search?part=snippet&order=viewCount&q=筋トレ&type=video&key=" + apikey
-
-	resp, err := http.Get(youtube_api)
+	connect := fmt.Sprintf(tmp, os.Getenv("DBUser"), os.Getenv("Password"), os.Getenv("DBName"))
+	driver := os.Getenv("SQLDrive")
+	db, err := gorm.Open(driver, connect)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatalln(err)
 	}
 
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	migrations := &migrate.FileMigrationSource{
+		Dir: "db",
+	}
+	_, err = migrate.Exec(db.DB(), driver, migrations, migrate.Up)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatalln(err)
 	}
+	defer db.Close()
 
-	var data search.Search
-	if err := json.Unmarshal(body, &data); err != nil {
-		fmt.Println(err)
+	data := infrastructure.NewDataRepository(db)
+	rest := &interfaces.Rest{
+		DataRepository: data,
 	}
-
-	for _, item := range data.Items {
-		fmt.Printf("%s\n", item.Snippet.Title)
-	}
+	rest.Start()
 }
